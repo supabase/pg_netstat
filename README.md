@@ -22,6 +22,11 @@ You can query realtime network stats through querying `pg_netstat` view.
 select * from pg_netstat;
 ```
 
+Query result is like below:
+
+<img width="1224" alt="image" src="https://user-images.githubusercontent.com/19306324/185877241-2fe2f1cd-193b-4334-bf22-d0fd6f95dfa3.png">
+
+
 ### Installation
 
 To install this extension, you need to give network packet capture permission to Postgres binary. For example,
@@ -38,11 +43,11 @@ Below are the configurations you can put in `postgresql.conf` file:
 
 1. `pg_netstat.interval` - How often network packets to be collected (in seconds)
 2. `pg_netstat.packet_wait_time` - How long to wait for network packets to be deliverd to collector (in seconds)
-3. `pg_netstat.pcap_buffer_size` - pcap setting for buffer size (in bytes), see details: https://www.tcpdump.org/manpages/pcap.3pcap.html
-4. `pg_netstat.pcap_snaplen` - pcap setting for snapshot length (in bytes), see details: https://www.tcpdump.org/manpages/pcap.3pcap.html
-5. `pg_netstat.pcap_timeout` - pcap setting for packet buffer timeout (in milliseconds), see details: https://www.tcpdump.org/manpages/pcap.3pcap.html
+3. `pg_netstat.pcap_buffer_size` - pcap setting for buffer size (in bytes)
+4. `pg_netstat.pcap_snaplen` - pcap setting for snapshot length (in bytes)
+5. `pg_netstat.pcap_timeout` - pcap setting for packet buffer timeout (in milliseconds)
 
-The most useful config is `interval`, which defines the stats collection frequency and all the others are low level so you probably don't want to change.
+The most useful config is `interval`, which defines the stats collection frequency and all the others are low level and you probably don't want to change. For all the `pcap_*` settings, see details at https://www.tcpdump.org/manpages/pcap.3pcap.html.
 
 Below is an example:
 
