@@ -1,0 +1,5 @@
+comment = 'pg_netstat:  Created by pgx'
+default_version = '@CARGO_VERSION@'
+module_pathname = '$libdir/pg_netstat'
+relocatable = false
+superuser = false
