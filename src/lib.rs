@@ -52,23 +52,23 @@ impl ConfigLoader {
         };
 
         GucRegistry::define_int_guc(
-                "pg_netstat.interval",
-                "network packets collection interval",
-                "How often network packets to be collected (in seconds)",
-                &ret.interval_guc,
-                1,
-                900_000,
-                GucContext::Sighup,
-            );
+            "pg_netstat.interval",
+            "network packets collection interval",
+            "How often network packets to be collected (in seconds)",
+            &ret.interval_guc,
+            1,
+            900_000,
+            GucContext::Sighup,
+        );
         GucRegistry::define_int_guc(
-                "pg_netstat.packet_wait_time",
-                "network packets delivery wait time",
-                "How long to wait for network packets to be deliverd to collector (in seconds)",
-                &ret.packet_wait_time_guc,
-                1,
-                10,
-                GucContext::Sighup,
-            );
+            "pg_netstat.packet_wait_time",
+            "network packets delivery wait time",
+            "How long to wait for network packets to be deliverd to collector (in seconds)",
+            &ret.packet_wait_time_guc,
+            1,
+            10,
+            GucContext::Sighup,
+        );
         GucRegistry::define_int_guc(
                 "pg_netstat.pcap_buffer_size",
                 "pcap buffer size",
@@ -255,7 +255,12 @@ impl Default for Counter {
     }
 }
 
-fn create_capture(device_name: &str, cfg: &Config, port: i32, direction: Direction) -> Capture<Active> {
+fn create_capture(
+    device_name: &str,
+    cfg: &Config,
+    port: i32,
+    direction: Direction,
+) -> Capture<Active> {
     let dir = match direction {
         Direction::In => "dst",
         Direction::Out => "src",
@@ -334,11 +339,10 @@ pub extern "C" fn bg_worker_main(_arg: pg_sys::Datum) {
     let port = {
         let port = Mutex::new(0i32);
         BackgroundWorker::transaction(|| {
-            let port_setting =
-                Spi::get_one::<String>("SELECT current_setting('port')")
-                    .expect("query port failed")
-                    .parse()
-                    .unwrap();
+            let port_setting = Spi::get_one::<String>("SELECT current_setting('port')")
+                .expect("query port failed")
+                .parse()
+                .unwrap();
             *port.lock().unwrap() = port_setting;
         });
         let ret = *port.lock().unwrap();
