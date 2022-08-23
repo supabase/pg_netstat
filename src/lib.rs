@@ -13,6 +13,7 @@ extension_sql_file!("../sql/bootstrap.sql", bootstrap);
 extension_sql_file!("../sql/finalize.sql", finalize);
 
 struct Config {
+    device: Option<String>,
     interval: i32,
     packet_wait_time: i32,
     pcap_buffer_size: i32,
@@ -23,6 +24,7 @@ struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
+            device: None,
             interval: 10,
             packet_wait_time: 5,
             pcap_buffer_size: 1_000_000,
@@ -33,6 +35,7 @@ impl Default for Config {
 }
 
 struct ConfigLoader {
+    device_guc: GucSetting<Option<&'static str>>,
     interval_guc: GucSetting<i32>,
     packet_wait_time_guc: GucSetting<i32>,
     pcap_buffer_size_guc: GucSetting<i32>,
@@ -44,6 +47,7 @@ impl ConfigLoader {
     fn new() -> Self {
         let cfg = Config::default();
         let ret = ConfigLoader {
+            device_guc: GucSetting::new(None),
             interval_guc: GucSetting::new(cfg.interval),
             packet_wait_time_guc: GucSetting::new(cfg.packet_wait_time),
             pcap_buffer_size_guc: GucSetting::new(cfg.pcap_buffer_size),
@@ -51,6 +55,13 @@ impl ConfigLoader {
             pcap_timeout_guc: GucSetting::new(cfg.pcap_timeout),
         };
 
+        GucRegistry::define_string_guc(
+            "pg_netstat.device",
+            "network device name",
+            "Network device name to capture packets from",
+            &ret.device_guc,
+            GucContext::Sighup,
+        );
         GucRegistry::define_int_guc(
             "pg_netstat.interval",
             "network packets collection interval",
@@ -101,6 +112,7 @@ impl ConfigLoader {
 
     fn load_config(&self) -> Config {
         Config {
+            device: self.device_guc.get().map(|d| d.to_owned()),
             interval: self.interval_guc.get(),
             packet_wait_time: self.packet_wait_time_guc.get(),
             pcap_buffer_size: self.pcap_buffer_size_guc.get(),
@@ -323,16 +335,14 @@ pub extern "C" fn bg_worker_main(_arg: pg_sys::Datum) {
     let mut cfg = cfg_loader.load_config();
 
     // get device name
-    //let device_name = Some("ens4");
-    let device_name = Some("lo");
-    //let device_name: Option<String> = None;
-    let device_name = if device_name.is_none() {
-        let device = Device::lookup()
-            .expect("device lookup failed")
-            .expect("no device availabe");
-        device.name.to_owned()
-    } else {
-        device_name.unwrap().to_string()
+    let device_name = match cfg.device {
+        Some(ref device) => device.clone(),
+        None => {
+            let device = Device::lookup()
+                .expect("device lookup failed")
+                .expect("no device availabe");
+            device.name.to_owned()
+        }
     };
 
     // get port number from settings

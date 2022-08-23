@@ -38,7 +38,7 @@ sudo setcap cap_net_raw,cap_net_admin=eip /usr/local/pgsql/bin/postgres
 Download this repo and set up [`pgx`](https://github.com/tcdi/pgx):
 
 ```
-cargo cargo install cargo-pgx
+cargo install cargo-pgx
 ```
 
 After pgx is set up, use below command to build the extension package:
@@ -47,7 +47,7 @@ After pgx is set up, use below command to build the extension package:
 cargo pgx package --pg-config ~/.pgx/14.5/pgx-install/bin/pg_config
 ```
 
-The extension is located at path like `./target/release/pg_netstat-pg14`. For more information, please visit [pgx site](https://github.com/tcdi/pgx).
+The extension is located at path `./target/release/pg_netstat-pg14`. For more information, please visit [pgx site](https://github.com/tcdi/pgx).
 
 Change `postgresql.conf` to enable below line:
 
@@ -68,11 +68,14 @@ select * from pg_netstat;
 
 Below are the configurations you can put in `postgresql.conf` file:
 
-1. `pg_netstat.interval` - How often network packets to be collected (in seconds), default is `10`
-2. `pg_netstat.packet_wait_time` - How long to wait for network packets to be deliverd to collector (in seconds), default is `5`
-3. `pg_netstat.pcap_buffer_size` - pcap setting for buffer size (in bytes), default is `1000000`
-4. `pg_netstat.pcap_snaplen` - pcap setting for snapshot length (in bytes), default is `96`
-5. `pg_netstat.pcap_timeout` - pcap setting for packet buffer timeout (in milliseconds), default is `1000`
+1. `pg_netstat.device` - Network device name to capture packets from, default is auto detect
+2. `pg_netstat.interval` - How often network packets to be collected (in seconds), default is `10`
+3. `pg_netstat.packet_wait_time` - How long to wait for network packets to be deliverd to collector (in seconds), default is `5`
+4. `pg_netstat.pcap_buffer_size` - pcap setting for buffer size (in bytes), default is `1000000`
+5. `pg_netstat.pcap_snaplen` - pcap setting for snapshot length (in bytes), default is `96`
+6. `pg_netstat.pcap_timeout` - pcap setting for packet buffer timeout (in milliseconds), default is `1000`
+
+You can list network device name by running `ifconfig` command. For example, device name for 'localhost' is `lo`.
 
 The most useful config is `pg_netstat.interval`, which defines the stats collection frequency. Its change can be reloaded from config file by using `pg_ctl` command:
 
@@ -86,6 +89,7 @@ All the others settings are at low level and you probably don't want to change t
 
 - Windows is not supported, that limitation inherits from `pgx`.
 - Currently only supports PostgreSQL v14, if you need other versions supported please [raise an issue](https://github.com/supabase/pg_netstat/issues).
+- Only one network device can be specified to capture packets from.
 - Replication haven't tested yet, use at your own risk.
 
 ### Contribution
