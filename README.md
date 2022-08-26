@@ -29,13 +29,21 @@ Query result is like below:
 
 ### Installation
 
-Before install this extension, you need to give network packet capture permission to Postgres binary. For example,
+**Prerequisites**
 
-```
-sudo setcap cap_net_raw,cap_net_admin=eip /usr/local/pgsql/bin/postgres
-```
+- Before install this extension, you need to give network packet capture permission to Postgres binary. For example,
 
-Download this repo and set up [`pgx`](https://github.com/tcdi/pgx):
+  ```
+  sudo setcap cap_net_raw,cap_net_admin=eip /usr/local/pgsql/bin/postgres
+  ```
+
+- `libpcap` library should be installed too, for example,
+
+   ```
+   sudo apt-get install libpcap-dev
+   ```
+
+After that, we can then start the installation. Download this repo and set up [`pgx`](https://github.com/tcdi/pgx):
 
 ```
 cargo install cargo-pgx
