@@ -10,7 +10,7 @@
 
 `pg_netstat` monitors your PostgreSQL database network traffic.
 
-This extension runs a background worker to capture network packets on the Postgres port, and provides realtime network stats data by a view `pg_netstat`. It uses [libpcap](https://www.tcpdump.org/manpages/pcap.3pcap.html) to capture packets and aggregates with user-specified interval.
+This extension runs a background worker to capture network packets on the Postgres port, and provides realtime network stats data by a view `pg_netstat`. It uses [libpcap](https://www.tcpdump.org/manpages/pcap.3pcap.html) to capture packets and aggregates at user-specified interval.
 
 The `pg_netstat` view can contain at most **60** history rows and discards the oldest rows when it is full, so choose your interval wisely.
 
