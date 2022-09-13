@@ -10,13 +10,13 @@
 
 `pg_netstat` monitors your PostgreSQL database network traffic.
 
-This extension runs a background worker to capture network packets on the Postgres port, and provides realtime network stats data by a view `pg_netstat`. It uses [libpcap](https://www.tcpdump.org/manpages/pcap.3pcap.html) to do packets capturing and aggreates with user-specified interval.
+This extension runs a background worker to capture network packets on the Postgres port, and provides realtime network stats data by a view `pg_netstat`. It uses [libpcap](https://www.tcpdump.org/manpages/pcap.3pcap.html) to capture packets and aggreates with user-specified interval.
 
 The `pg_netstat` view can contain at most **60** history rows and discards the oldest rows when it is full, so choose your interval wisely.
 
 ### Usage
 
-You can query realtime network stats through querying `pg_netstat` view.
+You can query realtime network stats through the `pg_netstat` view.
 
 ```sql
 select * from pg_netstat;
@@ -83,7 +83,7 @@ Below are the configurations you can put in `postgresql.conf` file:
 5. `pg_netstat.pcap_snaplen` - pcap setting for snapshot length (in bytes), default is `96`
 6. `pg_netstat.pcap_timeout` - pcap setting for packet buffer timeout (in milliseconds), default is `1000`
 
-You can list network device name by running `ifconfig` command. For example, device name for 'localhost' is `lo`.
+You can list network device name by running `ifconfig` command. For example, device name for 'localhost' is `lo`. By default, it uses the first device that is not a `loopback` network interface.
 
 The most useful config is `pg_netstat.interval`, which defines the stats collection frequency. Its change can be reloaded from config file by using `pg_ctl` command:
 
