@@ -24,7 +24,7 @@ select * from pg_netstat;
 
 Query result is like below:
 
-<img width="1224" alt="image" src="https://user-images.githubusercontent.com/19306324/185877241-2fe2f1cd-193b-4334-bf22-d0fd6f95dfa3.png">
+<img width="1287" alt="image" src="https://user-images.githubusercontent.com/19306324/211506046-a2116af8-26e3-4630-a059-774db23e1502.png">
 
 
 ### Installation
@@ -97,8 +97,7 @@ All the others settings are at low level and you probably don't want to change t
 ### Caveats & Limitations
 
 - Windows is not supported, that limitation inherits from `pgx`.
-- Currently only supports PostgreSQL v14, if you need other versions supported please [raise an issue](https://github.com/supabase/pg_netstat/issues).
-- Only one network device can be specified to capture packets from.
+- Currently only supports PostgreSQL v14 and v15, if you need other versions supported please [raise an issue](https://github.com/supabase/pg_netstat/issues).
 - Replication haven't tested yet, use at your own risk.
 
 ### Contribution
