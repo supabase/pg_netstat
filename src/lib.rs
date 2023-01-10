@@ -1,20 +1,31 @@
-use pcap::{Active, Capture, Device, Direction};
-use pgx::bgworkers::*;
-use pgx::*;
+#![allow(clippy::type_complexity)]
+
+use heapless::{String as HLString, Vec as HLVec};
+use pcap::{Active, Capture, Device, Direction, IfFlags};
+use pgx::{bgworkers::*, guc::*, lwlock::PgLwLock, prelude::*, shmem::*};
 use std::collections::VecDeque;
 use std::iter::Iterator;
+use std::str::FromStr;
 use std::sync::Mutex;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pg_module_magic!();
+pgx::pg_module_magic!();
 
 extension_sql_file!("../sql/bootstrap.sql", bootstrap);
 extension_sql_file!("../sql/finalize.sql", finalize);
 
+// maximum devices to capture
+const MAX_DEVICES: usize = 4;
+
+// maximum stats capture slots
+const MAX_SLOTS: usize = 60;
+
 struct Config {
-    device: Option<String>,
+    devices: Option<String>,
+    devices_final: Vec<String>, // finalized device names, for internal use
     interval: i32,
+    capture_loopback: bool,
     packet_wait_time: i32,
     pcap_buffer_size: i32,
     pcap_snaplen: i32,
@@ -24,8 +35,10 @@ struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            device: None,
+            devices: None,
+            devices_final: Vec::new(),
             interval: 10,
+            capture_loopback: false,
             packet_wait_time: 5,
             pcap_buffer_size: 1_000_000,
             pcap_snaplen: 96,
@@ -35,8 +48,9 @@ impl Default for Config {
 }
 
 struct ConfigLoader {
-    device_guc: GucSetting<Option<&'static str>>,
+    devices_guc: GucSetting<Option<&'static str>>,
     interval_guc: GucSetting<i32>,
+    capture_loopback_guc: GucSetting<bool>,
     packet_wait_time_guc: GucSetting<i32>,
     pcap_buffer_size_guc: GucSetting<i32>,
     pcap_snaplen_guc: GucSetting<i32>,
@@ -47,8 +61,9 @@ impl ConfigLoader {
     fn new() -> Self {
         let cfg = Config::default();
         let ret = ConfigLoader {
-            device_guc: GucSetting::new(None),
+            devices_guc: GucSetting::new(None),
             interval_guc: GucSetting::new(cfg.interval),
+            capture_loopback_guc: GucSetting::new(cfg.capture_loopback),
             packet_wait_time_guc: GucSetting::new(cfg.packet_wait_time),
             pcap_buffer_size_guc: GucSetting::new(cfg.pcap_buffer_size),
             pcap_snaplen_guc: GucSetting::new(cfg.pcap_snaplen),
@@ -56,10 +71,10 @@ impl ConfigLoader {
         };
 
         GucRegistry::define_string_guc(
-            "pg_netstat.device",
-            "network device name",
-            "Network device name to capture packets from",
-            &ret.device_guc,
+            "pg_netstat.devices",
+            "network device names",
+            "Network device names to capture packets from, delimited by comma, maximum 4 devices",
+            &ret.devices_guc,
             GucContext::Sighup,
         );
         GucRegistry::define_int_guc(
@@ -69,6 +84,13 @@ impl ConfigLoader {
             &ret.interval_guc,
             1,
             900_000,
+            GucContext::Sighup,
+        );
+        GucRegistry::define_bool_guc(
+            "pg_netstat.capture_loopback",
+            "capture on loopback device",
+            "Whether capture packets on loopback device",
+            &ret.capture_loopback_guc,
             GucContext::Sighup,
         );
         GucRegistry::define_int_guc(
@@ -81,39 +103,41 @@ impl ConfigLoader {
             GucContext::Sighup,
         );
         GucRegistry::define_int_guc(
-                "pg_netstat.pcap_buffer_size",
-                "pcap buffer size",
-                "pcap setting for buffer size (in bytes), see details: https://www.tcpdump.org/manpages/pcap.3pcap.html",
-                &ret.pcap_buffer_size_guc,
-                131_070,
-                90_000_000,
-                GucContext::Sighup,
-            );
+            "pg_netstat.pcap_buffer_size",
+            "pcap buffer size",
+            "pcap setting for buffer size (in bytes), see details: https://www.tcpdump.org/manpages/pcap.3pcap.html",
+            &ret.pcap_buffer_size_guc,
+            131_070,
+            90_000_000,
+            GucContext::Sighup,
+        );
         GucRegistry::define_int_guc(
-                "pg_netstat.pcap_snaplen",
-                "pcap snapshot length",
-                "pcap setting for snapshot length (in bytes), see details: https://www.tcpdump.org/manpages/pcap.3pcap.html",
-                &ret.pcap_snaplen_guc,
-                96,
-                65535,
-                GucContext::Sighup,
-            );
+            "pg_netstat.pcap_snaplen",
+            "pcap snapshot length",
+            "pcap setting for snapshot length (in bytes), see details: https://www.tcpdump.org/manpages/pcap.3pcap.html",
+            &ret.pcap_snaplen_guc,
+            96,
+            65535,
+            GucContext::Sighup,
+        );
         GucRegistry::define_int_guc(
-                "pg_netstat.pcap_timeout",
-                "pcap packet buffer timeout",
-                "pcap setting for packet buffer timeout (in milliseconds), see details: https://www.tcpdump.org/manpages/pcap.3pcap.html",
-                &ret.pcap_timeout_guc,
-                1,
-                30_000,
-                GucContext::Sighup,
-            );
+            "pg_netstat.pcap_timeout",
+            "pcap packet buffer timeout",
+            "pcap setting for packet buffer timeout (in milliseconds), see details: https://www.tcpdump.org/manpages/pcap.3pcap.html",
+            &ret.pcap_timeout_guc,
+            1,
+            30_000,
+            GucContext::Sighup,
+        );
         ret
     }
 
     fn load_config(&self) -> Config {
         Config {
-            device: self.device_guc.get().map(|d| d.to_owned()),
+            devices: self.devices_guc.get(),
+            devices_final: Vec::new(),
             interval: self.interval_guc.get(),
+            capture_loopback: self.capture_loopback_guc.get(),
             packet_wait_time: self.packet_wait_time_guc.get(),
             pcap_buffer_size: self.pcap_buffer_size_guc.get(),
             pcap_snaplen: self.pcap_snaplen_guc.get(),
@@ -142,13 +166,19 @@ struct Slot {
 
 impl Slot {
     fn new(ts: i64) -> Self {
-        let mut ret = Slot::default();
-        ret.ts = ts;
-        ret
+        Slot {
+            ts,
+            ..Default::default()
+        }
     }
 
-    fn to_row_tuple(&self, interval: i64) -> (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) {
+    fn as_row_tuple(
+        &self,
+        device: &str,
+        interval: i64,
+    ) -> (String, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) {
         (
+            device.to_owned(),
             self.ts,
             self.packets_in,
             self.packets_out,
@@ -169,26 +199,47 @@ unsafe impl PGXSharedMemory for Slot {}
 struct Stats {
     interval: i64,
     write_at: usize,
-    slots: heapless::Vec<Slot, 60>, // fixed capacity Vec
+
+    // network device names, device name size limit is 16
+    devices: HLVec<HLString<16>, MAX_DEVICES>,
+
+    // capture slots, maximum 60 slots per device
+    slots: HLVec<HLVec<Slot, MAX_SLOTS>, MAX_DEVICES>,
 }
 
 impl Stats {
-    fn write(&mut self, mut slot: Slot) {
-        slot.created_at = get_current_ts();
+    fn write(&mut self, mut slots: Vec<Slot>) {
+        assert_eq!(self.slots.len(), slots.len());
 
-        if self.slots.is_full() {
-            let write_at = self.write_at;
-            self.slots[write_at] = slot;
-        } else {
-            let _ = self.slots.push(slot);
+        let now = get_current_ts();
+
+        for tgt in self.slots.iter_mut() {
+            let mut slot = slots.remove(0);
+
+            slot.created_at = now;
+
+            if tgt.is_full() {
+                tgt[self.write_at] = slot;
+            } else {
+                let _ = tgt.push(slot);
+            }
         }
-        self.write_at = (self.write_at + 1) % self.slots.capacity();
+
+        self.write_at = (self.write_at + 1) % MAX_SLOTS;
     }
 
     fn reset(&mut self, cfg: &Config) {
         self.interval = cfg.interval as i64;
         self.write_at = 0;
+
+        self.devices.clear();
         self.slots.clear();
+        for device in cfg.devices_final.iter() {
+            self.devices
+                .push(HLString::from_str(device).unwrap())
+                .unwrap();
+            self.slots.push(HLVec::new()).unwrap();
+        }
     }
 }
 
@@ -198,7 +249,7 @@ static STATS: PgLwLock<Stats> = PgLwLock::new();
 
 #[pg_guard]
 pub extern "C" fn _PG_init() {
-    pg_shmem_init!(STATS);
+    pgx::pg_shmem_init!(STATS);
 
     BackgroundWorkerBuilder::new("pg_netstat background worker")
         .set_function("bg_worker_main")
@@ -210,8 +261,10 @@ pub extern "C" fn _PG_init() {
 }
 
 #[pg_extern]
-fn netstat() -> impl Iterator<
-    Item = (
+fn netstat() -> TableIterator<
+    'static,
+    (
+        name!(device, String),
         name!(ts, i64),
         name!(packets_in, i64),
         name!(packets_out, i64),
@@ -225,48 +278,69 @@ fn netstat() -> impl Iterator<
     ),
 > {
     let stats = STATS.share();
-    stats
-        .slots
-        .iter()
-        .map(|s| s.to_row_tuple(stats.interval))
-        .collect::<Vec<_>>()
-        .into_iter()
+    let mut data = Vec::new();
+
+    for (idx, device) in stats.devices.iter().enumerate() {
+        data.extend(
+            stats.slots[idx]
+                .iter()
+                .map(|s| s.as_row_tuple(device, stats.interval))
+                .collect::<Vec<_>>()
+                .into_iter(),
+        );
+    }
+
+    TableIterator::new(data.into_iter())
 }
 
 #[derive(Debug)]
 struct Counter {
     ts_start: i64,
-    slots: VecDeque<Slot>,
+    slots: Vec<VecDeque<Slot>>,
 }
 
 impl Counter {
+    fn new(device_cnt: usize) -> Self {
+        Self {
+            ts_start: get_current_ts(),
+            slots: vec![VecDeque::new(); device_cnt],
+        }
+    }
+
     fn save_slot(&mut self) {
-        assert!(self.slots.len() > 1);
+        let slots = self
+            .slots
+            .iter_mut()
+            .map(|slots| slots.pop_front().unwrap())
+            .collect();
+        //log!("{}", format!("**==>save slots {:?}", slots));
 
-        let slot = self.slots.pop_front().unwrap();
         let mut stats = STATS.exclusive();
-        stats.write(slot);
+        stats.write(slots);
 
-        //log!("{}", format!("**==>save slot {:?}", slot));
-
-        self.ts_start = self.slots.front().unwrap().ts;
+        self.ts_start = self.slots[0].front().unwrap().ts;
     }
 
     fn reset(&mut self) {
         self.ts_start = get_current_ts();
-        self.slots.clear();
-    }
-}
-
-impl Default for Counter {
-    fn default() -> Self {
-        Counter {
-            ts_start: get_current_ts(),
-            slots: VecDeque::new(),
+        for slots in self.slots.iter_mut() {
+            slots.clear();
         }
     }
 }
 
+// find loopback device
+fn find_loopback() -> String {
+    let devices = Device::list().expect("list device failed");
+    for device in devices {
+        if device.flags.if_flags.intersects(IfFlags::LOOPBACK) {
+            return device.name;
+        }
+    }
+    panic!("cannot find loopback device")
+}
+
+// create a packet capture
 fn create_capture(
     device_name: &str,
     cfg: &Config,
@@ -295,6 +369,7 @@ fn create_capture(
 
 fn collect_capture(
     cap: &mut Capture<Active>,
+    device_idx: usize,
     cntr: &mut Counter,
     interval: i32,
     direction: Direction,
@@ -305,14 +380,15 @@ fn collect_capture(
         let pkt_ts = hdr.ts.tv_sec;
         assert!(pkt_ts >= cntr.ts_start);
         let idx = ((pkt_ts - cntr.ts_start) / interval as i64) as usize;
+        let slots = &mut cntr.slots[device_idx];
         match direction {
             Direction::In => {
-                cntr.slots[idx].packets_in += 1;
-                cntr.slots[idx].bytes_in += hdr.len as i64;
+                slots[idx].packets_in += 1;
+                slots[idx].bytes_in += hdr.len as i64;
             }
             Direction::Out => {
-                cntr.slots[idx].packets_out += 1;
-                cntr.slots[idx].bytes_out += hdr.len as i64;
+                slots[idx].packets_out += 1;
+                slots[idx].bytes_out += hdr.len as i64;
             }
             _ => unreachable!(),
         }
@@ -334,16 +410,36 @@ pub extern "C" fn bg_worker_main(_arg: pg_sys::Datum) {
     let cfg_loader = ConfigLoader::new();
     let mut cfg = cfg_loader.load_config();
 
-    // get device name
-    let device_name = match cfg.device {
-        Some(ref device) => device.clone(),
+    // get device names string
+    let mut device_names: String = match cfg.devices {
+        Some(ref devices) => devices.clone(),
         None => {
             let device = Device::lookup()
                 .expect("device lookup failed")
                 .expect("no device availabe");
-            device.name.to_owned()
+            device.name
         }
     };
+
+    // if need capture loopback, find its name and append to device names string
+    if cfg.capture_loopback {
+        let loopback = find_loopback();
+        device_names.push_str(&format!(",{}", loopback));
+    }
+
+    // finalize device names and save back to config
+    cfg.devices_final = device_names
+        .split(',')
+        .map(|s| s.trim().to_owned())
+        .collect();
+    cfg.devices_final.dedup();
+    if cfg.devices_final.len() > MAX_DEVICES {
+        panic!(
+            "can only capture {} devices, but {} specified",
+            MAX_DEVICES,
+            cfg.devices_final.len()
+        );
+    }
 
     // get port number from settings
     let port = {
@@ -361,14 +457,19 @@ pub extern "C" fn bg_worker_main(_arg: pg_sys::Datum) {
 
     STATS.exclusive().reset(&cfg);
 
-    let mut cap_in = create_capture(device_name.as_str(), &cfg, port, Direction::In);
-    let mut cap_out = create_capture(device_name.as_str(), &cfg, port, Direction::Out);
-    let mut cntr = Counter::default();
+    let mut cntr = Counter::new(cfg.devices_final.len());
+    let mut caps: Vec<(Capture<Active>, Capture<Active>)> = Vec::new();
+
+    for device in &cfg.devices_final {
+        let cap_in = create_capture(device, &cfg, port, Direction::In);
+        let cap_out = create_capture(device, &cfg, port, Direction::Out);
+        caps.push((cap_in, cap_out));
+    }
 
     log!(
-        "{} started capture on device \"{}\" port {}",
+        "{} started capture on device {:?} port {}",
         worker_name,
-        device_name,
+        cfg.devices_final,
         port
     );
 
@@ -382,17 +483,32 @@ pub extern "C" fn bg_worker_main(_arg: pg_sys::Datum) {
         }
 
         let now = get_current_ts();
-        let span = ((now - cntr.ts_start) / cfg.interval as i64 + 1) as usize;
-        while span > cntr.slots.len() {
-            let last_ts = cntr
-                .slots
+        let slot_idx = ((now - cntr.ts_start) / cfg.interval as i64 + 1) as usize;
+        while slot_idx > cntr.slots[0].len() {
+            let last_ts = cntr.slots[0]
                 .back()
                 .map_or(cntr.ts_start, |s| s.ts + cfg.interval as i64);
-            cntr.slots.push_back(Slot::new(last_ts));
+            for slots in cntr.slots.iter_mut() {
+                slots.push_back(Slot::new(last_ts));
+            }
         }
 
-        collect_capture(&mut cap_in, &mut cntr, cfg.interval, Direction::In);
-        collect_capture(&mut cap_out, &mut cntr, cfg.interval, Direction::Out);
+        for (device_idx, cap) in caps.iter_mut().enumerate() {
+            collect_capture(
+                &mut cap.0,
+                device_idx,
+                &mut cntr,
+                cfg.interval,
+                Direction::In,
+            );
+            collect_capture(
+                &mut cap.1,
+                device_idx,
+                &mut cntr,
+                cfg.interval,
+                Direction::Out,
+            );
+        }
 
         // add a bit wait time for delayed packets to be delivered
         while now > cntr.ts_start + (cfg.interval + cfg.packet_wait_time) as i64 {

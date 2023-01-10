@@ -1,5 +1,6 @@
 CREATE VIEW pg_netstat AS
     SELECT
+        device,
         to_timestamp(ts) as ts,
         packets_in,
         packets_out,
@@ -13,5 +14,5 @@ CREATE VIEW pg_netstat AS
     FROM
         netstat()
     ORDER BY
-        ts
+        device, ts
     ;

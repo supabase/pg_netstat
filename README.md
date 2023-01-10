@@ -76,14 +76,15 @@ select * from pg_netstat;
 
 Below are the configurations you can put in `postgresql.conf` file:
 
-1. `pg_netstat.device` - Network device name to capture packets from, default is auto detect
+1. `pg_netstat.devices` - Network device names to capture packets from, delimited by comma, maximum 4 devices, default is auto detect
 2. `pg_netstat.interval` - How often network packets to be collected (in seconds), default is `10`
-3. `pg_netstat.packet_wait_time` - How long to wait for network packets to be deliverd to collector (in seconds), default is `5`
-4. `pg_netstat.pcap_buffer_size` - pcap setting for buffer size (in bytes), default is `1000000`
-5. `pg_netstat.pcap_snaplen` - pcap setting for snapshot length (in bytes), default is `96`
-6. `pg_netstat.pcap_timeout` - pcap setting for packet buffer timeout (in milliseconds), default is `1000`
+3. `pg_netstat.capture_loopback` - Whether capture packets on loopback device, default is `false`
+4. `pg_netstat.packet_wait_time` - How long to wait for network packets to be deliverd to collector (in seconds), default is `5`
+5. `pg_netstat.pcap_buffer_size` - pcap setting for buffer size (in bytes), default is `1000000`
+6. `pg_netstat.pcap_snaplen` - pcap setting for snapshot length (in bytes), default is `96`
+7. `pg_netstat.pcap_timeout` - pcap setting for packet buffer timeout (in milliseconds), default is `1000`
 
-You can list network device name by running `ifconfig` command. For example, device name for 'localhost' is `lo`. By default, it uses the first device that is not a `loopback` network interface.
+You can list network device name by running `ifconfig` command. For example, device name for 'localhost' is `lo`. The device auto detect will use the first device that is not a `loopback` network interface.
 
 The most useful config is `pg_netstat.interval`, which defines the stats collection frequency. Its change can be reloaded from config file by using `pg_ctl` command:
 
