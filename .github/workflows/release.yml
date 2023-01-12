@@ -37,6 +37,8 @@ jobs:
       matrix:
         extension_name:
           - pg_netstat
+        extension_name_deb_pkg:
+          - pg-netstat
         pgx_version:
           - 0.6.1
         postgres: [14, 15]
@@ -113,7 +115,7 @@ jobs:
 
           mkdir -p ${package_dir}/DEBIAN
           touch ${package_dir}/DEBIAN/control
-          echo 'Package: ${{ matrix.extension_name }}' >> ${package_dir}/DEBIAN/control
+          echo 'Package: ${{ matrix.extension_name_deb_pkg }}' >> ${package_dir}/DEBIAN/control
           echo 'Version:' ${deb_version} >> ${package_dir}/DEBIAN/control
           echo 'Architecture: ${{ matrix.box.arch }}' >> ${package_dir}/DEBIAN/control
           echo 'Maintainer: supabase' >> ${package_dir}/DEBIAN/control
@@ -133,6 +135,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ env.UPLOAD_URL }}
-          asset_path: ./${{ matrix.extension_name }}-${{ github.ref_name }}-pg${{ matrix.postgres }}-${{ matrix.box.arch }}-linux-gnu.deb
-          asset_name: ${{ matrix.extension_name }}-${{ github.ref_name }}-pg${{ matrix.postgres }}-${{ matrix.box.arch }}-linux-gnu.deb
+          asset_path: ./${{ matrix.extension_name_deb_pkg }}-${{ github.ref_name }}-pg${{ matrix.postgres }}-${{ matrix.box.arch }}-linux-gnu.deb
+          asset_name: ${{ matrix.extension_name_deb_pkg }}-${{ github.ref_name }}-pg${{ matrix.postgres }}-${{ matrix.box.arch }}-linux-gnu.deb
           asset_content_type: application/vnd.debian.binary-package
