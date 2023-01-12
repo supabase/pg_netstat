@@ -50,8 +50,6 @@ jobs:
 
       - name: build release artifacts
         run: |
-          cd pg_netstat
-
           # Add postgres package repo
           sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
           wget -qO- https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /etc/apt/trusted.gpg.d/pgdg.asc &>/dev/null
@@ -135,6 +133,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ env.UPLOAD_URL }}
-          asset_path: ./pg_netstat/${{ matrix.extension_name }}-${{ github.ref_name }}-pg${{ matrix.postgres }}-${{ matrix.box.arch }}-linux-gnu.deb
+          asset_path: ./${{ matrix.extension_name }}-${{ github.ref_name }}-pg${{ matrix.postgres }}-${{ matrix.box.arch }}-linux-gnu.deb
           asset_name: ${{ matrix.extension_name }}-${{ github.ref_name }}-pg${{ matrix.postgres }}-${{ matrix.box.arch }}-linux-gnu.deb
           asset_content_type: application/vnd.debian.binary-package
