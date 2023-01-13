@@ -97,9 +97,12 @@ jobs:
           cp archive/*.sql ${package_dir}/var/lib/postgresql/extension
 
           # symlinks to Copy files into directory structure
+          cd ${package_dir}/usr/lib/postgresql/lib
+          ln -s *.so ${{ matrix.extension_name }}.so
           mkdir -p ${package_dir}/usr/lib/postgresql/${{ matrix.postgres }}/lib
           cd ${package_dir}/usr/lib/postgresql/${{ matrix.postgres }}/lib
           cp -s ../../lib/*.so .
+          ln -s *.so ${{ matrix.extension_name }}.so
           cd ../../../../../..
 
           mkdir -p ${package_dir}/usr/share/postgresql/${{ matrix.postgres }}/extension
