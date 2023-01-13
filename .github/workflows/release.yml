@@ -37,8 +37,6 @@ jobs:
       matrix:
         extension_name:
           - pg_netstat
-        extension_name_deb_pkg:
-          - pg-netstat
         pgx_version:
           - 0.6.1
         postgres: [14, 15]
@@ -118,7 +116,8 @@ jobs:
 
           mkdir -p ${package_dir}/DEBIAN
           touch ${package_dir}/DEBIAN/control
-          echo 'Package: ${{ matrix.extension_name_deb_pkg }}' >> ${package_dir}/DEBIAN/control
+          # deb package name doesn't allow underscore
+          echo 'Package: ${{ matrix.extension_name }}' | sed s/_/-/g >> ${package_dir}/DEBIAN/control
           echo 'Version:' ${deb_version} >> ${package_dir}/DEBIAN/control
           echo 'Architecture: ${{ matrix.box.arch }}' >> ${package_dir}/DEBIAN/control
           echo 'Maintainer: supabase' >> ${package_dir}/DEBIAN/control
